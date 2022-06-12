@@ -1,7 +1,7 @@
 '''
 api_demo.py
-version 1.0
-2021-11-02
+version 1.1
+2022-06-12
 
 This module contains functions to demo the following
     1. Send a request to the SIS webservice endpoint and write out the data in csv file 
@@ -24,6 +24,9 @@ Example usage:
   1b. To get equipment for 2 models AIRLINK GX440, CP-WAN-B311-A operated by SCSN-CA. 
         Note that if modelname contains spaces it should be enclosed in quotes
       $ python3 api_demo.py test getequipment equipment.csv --modelnames "AIRLINK GX440" CP-WAN-B311-A --operatorcodes SCSN-CA
+  1c. To get equipment belonging to a certain equipment category at given sites
+      $ python3 api_demo.py prod getequipinstall loggerbeta.csv --categorys "LOGGER" --netcodes "AK" --lookupcodes "S32K" "M19K" "H23K"
+
   2. To refresh an existing token
       $ python3 api_demo.py test --refreshtoken
 
@@ -198,6 +201,78 @@ def get_equipment(mode, outfpathname, modelnames, operatorcodes, inventory_state
         for equip in equips:
             writer.writerow(equip)
 
+def get_equipinstall(mode, outfpathname, categorys, netcodes, lookupcodes=[]):
+    ''' Get the equipment installation and write csv output to a file.
+        Requires two parameters used to filter the output: netcodes and categorygroups
+        Optional input: lookupcode  '''
+
+    if not outfpathname:
+        print ("Error: Please provide output csv filepath and name. ")
+        return
+    if not categorys:
+        print ("Error: Please provide categories to limit the result. ")
+        return
+
+    endpointurl = 'v1/equipment-installations'
+
+### construct filter string
+    proto_filter = {'category': ','.join(categorys)}
+    sort_opt = {'sort': 'category'}
+    if netcodes:
+       proto_filter = {**proto_filter,**{'netcode':','.join(netcodes)}}
+       sort_opt = {'sort': 'netcode'}
+    if lookupcodes:
+       proto_filter = {**proto_filter,**{'lookupcode':','.join(lookupcodes)}}
+       sort_opt = {'sort': 'lookupcode'}
+    proto_filter = {**proto_filter,**{'isactive': 'y','page[number]': 1}}
+    filterparams = {**proto_filter,**sort_opt}
+
+    try:
+        print(filterparams)
+        all_data, incl_dict = send_request(mode, endpointurl, filterparams)
+    except:
+        # Add error handling as needed. For now doing nothing
+        return
+
+    if all_data is None:
+        return
+
+    # Flatten the data for a csv output. Extract the attributes, and values from sub-dicts for equip epoch and ipaddress.
+    attr_keys = ['ondate']
+    e_keys = ['modelname', 'serialnumber', 'category']
+    site_keys = ['netcode', 'lookupcode']
+    equips = []
+    for r in all_data:
+
+        # Get values from attributes
+        attribs = r['attributes']
+        equipinstall = { k: attribs[k] for k in attr_keys }
+        equip = equipinstall
+
+        # Demo to show how to get information from the included section
+        # Get the model name, category, manufacturer from incl_dict
+        equiplookup = r['relationships']['equipment']['data']
+        equipm = incl_dict[equiplookup['type']][equiplookup['id']]
+        equipdict = { k: equipm[k] for k in e_keys }
+        equip.update(equipdict)
+
+        # Extract lookupcode from latest epoch
+        selookup = r['relationships']['siteepoch']['data']
+        sepoch = incl_dict[selookup['type']][selookup['id']]
+        sedict = { k: sepoch[k] for k in site_keys }
+        equip.update(sedict)
+
+        equips.append(equip)
+
+    with open(outfpathname, 'w', newline='') as csvfile:
+        # Specify columns to be written out
+        fieldnames = ['modelname','serialnumber', 'netcode','lookupcode']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
+
+        writer.writeheader()
+        for equip in equips:
+            writer.writerow(equip)
+
 def send_request (mode, endpointurl, filterparams):
     ''' Use this function to build and send the request and get all the pages of data.
     Send in filterparams with the url to take advantage of server side filtering and to reduce extra large results.
@@ -266,6 +341,13 @@ def main():
     parser_eq.add_argument('--operatorcodes', required=True, nargs='+', help='Operator codes')
     parser_eq.add_argument('--inventory', nargs='+', help='Inventory states')
 
+    # Create the subparser for equipment installation report
+    parser_eq = subparsers.add_parser('getequipinstall', )
+    parser_eq.add_argument('outfilename', help='Path and name of output csv file')
+    parser_eq.add_argument('--categorys', required=True, nargs='+', help='Categorys')
+    parser_eq.add_argument('--netcodes', nargs='+', help='Net codes')
+    parser_eq.add_argument('--lookupcodes', nargs='+', help='Lookup Code')
+
     args = parser.parse_args()
 
     if args.refreshtoken:
@@ -276,6 +358,8 @@ def main():
             get_logger_models(args.mode, args.outfilename)
         elif args.reporttype == 'getequipment':
             get_equipment(args.mode, args.outfilename, args.modelnames, args.operatorcodes, args.inventory)
+        elif args.reporttype == 'getequipinstall':
+            get_equipinstall(args.mode, args.outfilename, args.categorys, args.netcodes, args.lookupcodes)
 
 if __name__ == "__main__":
     main()

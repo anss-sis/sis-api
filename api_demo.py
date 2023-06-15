@@ -1,11 +1,10 @@
 '''
-api_demo.py
-version 1.1
-2022-06-12
+api_demo.py  2023-06-15
+version 1.2 
+    Changelog: Removed code to refresh a token, since that endpoint has been removed
 
 This module contains functions to demo the following
     1. Send a request to the SIS webservice endpoint and write out the data in csv file 
-    2. Send a request to refresh a token
 
 Dependencies: 
   requests library. To install it run command: 
@@ -16,7 +15,6 @@ Dependencies:
     2. sis_prod.token: Your SIS token for the production website. Needed if running the script to connect to the production site
   Get a token by using the SIS UI > Your Account page > Get a Token and copy it to the file.
   Limit read/write access to token file to only the user running the script and place it in the same directory as the script.
-  If script will be executed in cron on an automatic schedule, run an additional daily task to refresh the token.
 
 Example usage:
   1a. To get logger models
@@ -26,9 +24,6 @@ Example usage:
       $ python3 api_demo.py test getequipment equipment.csv --modelnames "AIRLINK GX440" CP-WAN-B311-A --operatorcodes SCSN-CA
   1c. To get equipment belonging to a certain equipment category at given sites
       $ python3 api_demo.py prod getequipinstall loggerbeta.csv --categorys "LOGGER" --netcodes "AK" --lookupcodes "S32K" "M19K" "H23K"
-
-  2. To refresh an existing token
-      $ python3 api_demo.py test --refreshtoken
 
 Author: Prabha Acharya, ANSS SIS Development Team, SCSN
 
@@ -47,11 +42,7 @@ config = {
             'tokenfile': 'sis_test.token', }, 
     }
 
-#  ----------- TOKEN MANAGEMENT --------------
-# Token once obtained can be saved to a file and used till it is valid (1 day).
-# Before it expires, you can refresh it by calling the refresh endpoint 
-# which returns a new token which is valid for another day and so on.
-# If it expires you would need to get a token from the SIS website 
+
 def read_token_file(mode):
     tokenfile = config[mode]['tokenfile']
     scriptpath = os.path.dirname(os.path.abspath(__file__))
@@ -60,40 +51,6 @@ def read_token_file(mode):
         content = f.read()
         token = content.strip()
         return token
-
-def save_token(mode, token):
-    tokenfile = config[mode]['tokenfile']
-    scriptpath = os.path.dirname(os.path.abspath(__file__))
-    fpathname = os.path.join(scriptpath, tokenfile)
-    with open (fpathname, 'w') as f:
-        f.write(token)
-
-def refresh_token(mode):
-    ''' refresh_token: Get a new token given an existing valid token. 
-    Uses the current token from the token file, and sends a request to the refresh endpoint
-    to get a new token. Saves the new token to a file and returns it to the caller. 
-    '''
-
-    if mode not in config:
-        print (f'Error in input parameters. Valid values for mode are {list(config.keys())}. Received {mode}')
-        print ('The token might be invalid or expired. Get another token by using the SIS UI > Your Account page > Get a Token. Copy the token into the token file')
-        return
-
-    baseurl = config[mode]['baseurl']
-    token = read_token_file(mode)
-
-    refresh_endpoint= f'{baseurl}/v1/token/refresh'
-    payload = {'token': token}
-    try:
-        r = requests.post(refresh_endpoint, data=payload)
-        r.raise_for_status()
-
-    except requests.exceptions.HTTPError as e:
-        print ('Error occurred. Refresh failed.', e)
-    else:
-        new_token = r.json()['token']
-        save_token(mode, new_token)
-        return new_token
 
 #  ----------- REPORT GENERATION --------------
 
@@ -327,7 +284,6 @@ def main():
     parser = argparse.ArgumentParser(description='SIS Webservice Reports')
     parser.add_argument('mode', choices=config.keys(), default='test',
                         help='Connect to SIS test or production')
-    parser.add_argument('--refreshtoken', action='store_true', help='Refresh the token')
     subparsers = parser.add_subparsers(title='Report type', dest='reporttype')
 
     # Create the subparser for loggermodel report
@@ -350,9 +306,6 @@ def main():
 
     args = parser.parse_args()
 
-    if args.refreshtoken:
-        refresh_token(args.mode)
-
     if args.reporttype:
         if args.reporttype == 'getloggermodel':
             get_logger_models(args.mode, args.outfilename)
@@ -363,4 +316,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

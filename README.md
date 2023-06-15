@@ -23,7 +23,3 @@ Note: This python script is not to be used in a production setting. Changes and 
       
       `python3 api_demo.py test getequipment equipment.csv --modelnames "AIRLINK GX440" CP-WAN-B311-A --operatorcodes SCSN-CA`
       
-  - To refresh an existing token on test
-      
-      `python3 api_demo.py test --refreshtoken`
-
